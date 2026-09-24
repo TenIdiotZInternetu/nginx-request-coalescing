@@ -1,2 +1,7 @@
 .cache/
+*_temp/
+logs/
+
 compile_commands.json
+nginx.conf
+run.sh
