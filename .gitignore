@@ -4,5 +4,5 @@ logs/
 
 compile_commands.json
 nginx.conf
-run.sh
+nginx.sh
 build.sh

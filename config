@@ -3,12 +3,12 @@ ngx_addon_name=ngx_request_coalescing_module
 if test -n "$ngx_module_link"; then
     ngx_module_type=HTTP
     ngx_module_name=ngx_request_coalescing_module
-    ngx_module_srcs="$ngx_addon_dir/ngx_request_coalescing_module.cpp"
+    ngx_module_srcs="$ngx_addon_dir/src/module.cpp $ngx_addon_dir/src/Cache.cpp $ngx_addon_dir/src/RingBuffer.cpp"
     ngx_module_libs="-lstdc++"
     
     . auto/module
 else
     HTTP_MODULES="$HTTP_MODULES ngx_request_coalescing_module"
-    NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_request_coalescing_module.cpp"
+    NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/src/module.cpp $ngx_addon_dir/src/Cache.cpp $ngx_addon_dir/src/RingBuffer.cpp"
     CORE_LIBS="$CORE_LIBS -lstdc++"
 fi
