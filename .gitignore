@@ -5,3 +5,4 @@ logs/
 compile_commands.json
 nginx.conf
 run.sh
+build.sh
