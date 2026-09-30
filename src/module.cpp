@@ -90,6 +90,26 @@ static char* merge_server_config(ngx_conf_t* conf_ctx, void* parent, void* child
 }
 
 
+static ngx_uint_t get_cache_key(ngx_http_request_t* request, ngx_str_t* key)
+{
+    ngx_str_t host = request->headers_in.server;
+    ngx_str_t uri = request->uri;
+    ngx_uint_t key_length = host.len + uri.len;
+
+    key->data = (u_char*)ngx_pnalloc(request->pool, key_length);
+    if (key->data == NULL) {
+        return NGX_ERROR;
+    }
+
+    key->len = key_length;
+
+    u_char* ptr = key->data;
+    ngx_cpymem(ptr, request->headers_in.server.data, host.len);
+    ngx_cpymem(ptr, request->uri.data, uri.len);
+    return NGX_OK;
+}
+
+
 static ngx_int_t request_handler(ngx_http_request_t* request)
 {
     ngx_chain_t output_chain;
