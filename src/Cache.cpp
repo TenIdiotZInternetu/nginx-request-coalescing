@@ -1,10 +1,11 @@
 #include "Cache.hpp"
 
-#include "ngx_config.h"
+extern "C" {
 #include "ngx_cycle.h"
 #include "ngx_shmtx.h"
 #include "ngx_slab.h"
 #include "ngx_string.h"
+}
 
 
 namespace ngx::http::coalesce  //
@@ -40,7 +41,7 @@ Cache* Cache::init(ngx_conf_t* config_ctx, size_t rings_count, size_t rings_size
 Cache* Cache::open() {}
 
 
-void Cache::set_entry_payload(ngx_str_t key, void* data)
+void Cache::set_entry_payload(ngx_str_t key, void* data, size_t data_size)
 {
     hash_t hash = hash_key(key);
     ring_head_t* ring = get_ring_head(hash.ring_idx);
@@ -48,22 +49,20 @@ void Cache::set_entry_payload(ngx_str_t key, void* data)
     ngx_shmtx_lock(&ring->mutex);
     ring_entry_t* entry = get_ring_entry(ring, hash.tag);
     entry->data = data;
+    entry->data_size = data_size;
     ngx_shmtx_unlock(&ring->mutex);
 }
 
 
-void* Cache::get_entry_payload(ngx_str_t key)
+void Cache::cpy_entry_payload(ngx_str_t key, void* destination)
 {
     hash_t hash = hash_key(key);
     ring_head_t* ring = get_ring_head(hash.ring_idx);
-    void* data;
 
     ngx_shmtx_lock(&ring->mutex);
     ring_entry_t* entry = get_ring_entry(ring, hash.tag);
-    data = entry->data;
+    ngx_memcpy(destination, entry->data, entry->data_size);
     ngx_shmtx_unlock(&ring->mutex);
-
-    return data;
 }
 
 uint32_t Cache::align_to_nearest_exp(uint32_t num)

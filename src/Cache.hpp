@@ -24,6 +24,7 @@ class Cache {
     struct ring_entry_t {
         uint32_t tag;
         void* data;
+        size_t data_size;
     };
 
     struct hash_t {
@@ -36,12 +37,12 @@ class Cache {
     static Cache* init(ngx_conf_t* config_ctx, size_t rings_count, size_t rings_size);
     static Cache* open();
 
-    bool key_exists(ngx_str_t key) { return get_entry(hash_key(key)) == NULL; };
+    bool key_exists(ngx_str_t key);
     void add_entry(ngx_str_t key);
     void remove_entry(ngx_str_t key);
 
-    void set_entry_payload(ngx_str_t key, void* data);
-    void* get_entry_payload(ngx_str_t key);
+    void set_entry_payload(ngx_str_t key, void* data, size_t data_size);
+    void cpy_entry_payload(ngx_str_t key, void* destination);
 
     uint32_t rings_count() { return rings_count_; }
     uint32_t rings_size() { return rings_size_; }
