@@ -1,8 +1,12 @@
+#include "Cache.hpp"
+
 extern "C" {
 #include <ngx_conf_file.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+
+extern ngx_module_t ngx_request_coalescing_module;
 }
 
 namespace ngx::http::coalesce {
@@ -10,6 +14,7 @@ namespace ngx::http::coalesce {
 typedef struct {
     size_t ring_buffer_size;
     size_t ring_buffer_count;
+    Cache* cache;
 } server_config_t;
 
 static server_config_t default_config{16, 4096};
@@ -19,7 +24,6 @@ static void* create_server_config(ngx_conf_t* cf);
 static char* merge_server_config(ngx_conf_t* conf_ctx, void* parent, void* child);
 
 
-/* Directives list */
 static ngx_command_t module_commands[] = {//
     {ngx_string("cache_buffer_size"),
         NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
@@ -37,7 +41,7 @@ static ngx_command_t module_commands[] = {//
 
     ngx_null_command};
 
-/* Module context callbacks */
+
 static ngx_http_module_t module_ctx = {
     NULL,                 /* preconfiguration */
     NULL,                 /* postconfiguration */
@@ -96,6 +100,10 @@ static ngx_uint_t get_cache_key(ngx_http_request_t* request, ngx_str_t* key)
     ngx_str_t uri = request->uri;
     ngx_uint_t key_length = host.len + uri.len;
 
+    if (key_length == 0) {
+        return NGX_ERROR;
+    }
+
     key->data = (u_char*)ngx_pnalloc(request->pool, key_length);
     if (key->data == NULL) {
         return NGX_ERROR;
@@ -114,11 +122,27 @@ static ngx_int_t request_handler(ngx_http_request_t* request)
 {
     ngx_chain_t output_chain;
 
-    // TODO: Look for the key in cache
-    //              if present, wait for event, fetch result from shmem
-    //              if not, pass request
+    server_config_t* srv_config = (server_config_t*)ngx_http_get_module_srv_conf(
+        request, ngx_request_coalescing_module);
 
-    return ngx_http_output_filter(request, &output_chain);
+    Cache* cache = srv_config->cache;
+    ngx_str_t cache_key;
+
+    if (get_cache_key(request, &cache_key) != NGX_OK) {
+        return NGX_ERROR;
+    };
+
+    if (cache->key_exists(cache_key)) {
+        ngx_event_t* event = (ngx_event_t*)ngx_pcalloc(request->pool, sizeof(ngx_event_t));
+        event->handler = check_cached_payload;
+        ngx_event_add_timer(event, 10);
+
+        ++request->main->count;
+        return NGX_DONE;
+    }
+
+    cache->add_entry(cache_key);
+    return NGX_DECLINED;
 }
 
 }  // namespace ngx::http::coalesce
