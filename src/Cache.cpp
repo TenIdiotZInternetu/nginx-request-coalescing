@@ -4,6 +4,7 @@
 
 #include <cstdint>
 
+extern "C" {
 #include "ngx_config.h"
 #include "ngx_core.h"
 
@@ -29,7 +30,8 @@ Cache::hash_t Cache::hash_key(ngx_str_t key)
 }
 
 
-ngx_int_t Cache::init(ngx_conf_t* config_ctx, size_t rings_count, size_t rings_size, void* tag)
+ngx_shm_zone_t* Cache::init(ngx_conf_t* config_ctx, uint32_t rings_count, uint32_t rings_size,
+    uint32_t slot_size, void* tag)
 {
     Cache* cache = (Cache*)ngx_pcalloc(config_ctx->pool, sizeof(Cache));
     if (cache == NULL) {
@@ -94,8 +96,8 @@ void Cache::set_entry_payload(ngx_str_t key, void* data, size_t data_size)
 
     ngx_shmtx_lock(&ring->mutex);
     ring_entry_t* entry = get_ring_entry(ring, hash.tag);
-    entry->data = data;
-    entry->data_size = data_size;
+    entry->payload = data;
+    entry->payload_size = data_size;
     ngx_shmtx_unlock(&ring->mutex);
 }
 
@@ -107,7 +109,7 @@ void Cache::cpy_entry_payload(ngx_str_t key, void* destination)
 
     ngx_shmtx_lock(&ring->mutex);
     ring_entry_t* entry = get_ring_entry(ring, hash.tag);
-    ngx_memcpy(destination, entry->data, entry->data_size);
+    ngx_memcpy(destination, entry->payload, entry->payload_size);
     ngx_shmtx_unlock(&ring->mutex);
 }
 
@@ -135,7 +137,7 @@ Cache::ring_entry_t* Cache::get_ring_entry(ring_head_t* ring, uint32_t tag)
 
     for (uint32_t entry_idx = 0; entry_idx < rings_size_; ++entry_idx) {
         entry = first_entry + entry_idx;
-        if (entry->tag == tag && tag != 0) {
+        if (entry->tag == tag) {
             return entry;
         }
     }

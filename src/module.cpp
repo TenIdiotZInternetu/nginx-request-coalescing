@@ -14,9 +14,10 @@ namespace ngx::http::coalesce {
 typedef struct {
     size_t ring_buffer_size;
     size_t ring_buffer_count;
-    Cache* cache;
+    size_t max_entry_payload_size;
+    ngx_shm_zone_t* cache_shm;
 } server_config_t;
-
+static server_config_t default_config{16, 1024, 16384, NULL};
 static server_config_t default_config{16, 4096};
 
 static ngx_int_t request_handler(ngx_http_request_t* r);
@@ -37,6 +38,13 @@ static ngx_command_t module_commands[] = {//
         ngx_conf_set_size_slot,
         NGX_HTTP_SRV_CONF_OFFSET,
         offsetof(server_config_t, ring_buffer_count),
+        NULL},
+
+    {ngx_string("cache_max_entry_size"),
+        NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
+        ngx_conf_set_size_slot,
+        NGX_HTTP_SRV_CONF_OFFSET,
+        offsetof(server_config_t, max_entry_payload_size),
         NULL},
 
     ngx_null_command};
@@ -65,6 +73,7 @@ static void* create_server_config(ngx_conf_t* conf_ctx)
 
     conf_ptr->ring_buffer_size = NGX_CONF_UNSET_SIZE;
     conf_ptr->ring_buffer_count = NGX_CONF_UNSET_SIZE;
+    conf_ptr->max_entry_payload_size = NGX_CONF_UNSET_SIZE;
 
     return conf_ptr;
 }

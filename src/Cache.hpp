@@ -24,10 +24,14 @@ class Cache {
     };
 
     struct ring_entry_t {
-        void* data;
-        size_t data_size;
+        enum class status_t { FREE, WAITING, COMPLETE, REFUSED, ERROR };
+
+        void* payload_headers;
+        void* payload_body;
+        uint32_t subscribers;
+        uint32_t payload_size;
         uint32_t tag;
-        bool completed;
+        status_t status;
     };
 
     struct hash_t {
@@ -36,15 +40,14 @@ class Cache {
     };
 
     static constexpr char SHM_ZONE_NAME[] = "REQUEST_COALESCING_RING_BUFFER_CACHE";
-
-    static ngx_int_t init(ngx_conf_t* cf, size_t rings_count, size_t rings_size, void* tag);
-    static Cache* open();
+    static ngx_shm_zone_t* init(
+        ngx_conf_t* cf, uint32_t rings_count, uint32_t rings_size, uint32_t slot_size, void* tag);
 
     bool key_exists(ngx_str_t key);
     void add_entry(ngx_str_t key);
     void remove_entry(ngx_str_t key);
 
-    void set_entry_payload(ngx_str_t key, void* data, size_t data_size);
+    void set_entry_payload(ngx_str_t key, void* data, uint32_t data_size);
     void cpy_entry_payload(ngx_str_t key, void* destination);
 
     uint32_t rings_count() { return rings_count_; }
@@ -60,6 +63,7 @@ class Cache {
     void* data_;
     uint32_t rings_count_;
     uint32_t rings_size_;
+    uint32_t slot_size_;
 
     hash_t hash_key(ngx_str_t key);
     static ngx_int_t init_shm_zone(ngx_shm_zone_t* zone, void* cache_data);
