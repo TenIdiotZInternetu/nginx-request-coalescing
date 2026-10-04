@@ -18,9 +18,22 @@ typedef struct {
     ngx_shm_zone_t* cache_shm;
 } server_config_t;
 
+typedef struct {
+    ngx_uint_t http_status;
+    uint32_t headers_size;
+    uint32_t body_size;
+} cached_res_t;
+
+static ngx_http_output_header_filter_pt next_header_filter;
+static ngx_http_output_body_filter_pt next_body_filter;
+
 static server_config_t default_config{16, 1024, 16384, NULL};
 
+static ngx_int_t header_filter(ngx_http_request_t* r);
+static ngx_int_t body_filter(ngx_http_request_t* r, ngx_chain_t* in);
 static ngx_int_t request_handler(ngx_http_request_t* r);
+
+static ngx_int_t postconfiguration(ngx_conf_t* cf);
 static void* create_server_config(ngx_conf_t* cf);
 static char* merge_server_config(ngx_conf_t* conf_ctx, void* parent, void* child);
 
@@ -52,7 +65,7 @@ static ngx_command_t module_commands[] = {//
 
 static ngx_http_module_t module_ctx = {
     NULL,                 /* preconfiguration */
-    NULL,                 /* postconfiguration */
+    postconfiguration,    /* postconfiguration */
     NULL,                 /* create main configuration */
     NULL,                 /* init main configuration */
     create_server_config, /* create server configuration */
@@ -60,6 +73,29 @@ static ngx_http_module_t module_ctx = {
     NULL,                 /* create location configuration */
     NULL                  /* merge location configuration */
 };
+
+
+static ngx_int_t postconfiguration(ngx_conf_t* cf)
+{
+    ngx_http_core_main_conf_t* core_main_conf = (ngx_http_core_main_conf_t*)
+        ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+
+    ngx_http_handler_pt* handler = (ngx_http_handler_pt*)ngx_array_push(
+        &core_main_conf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
+
+    if (handler == NULL) {
+        return NGX_ERROR;
+    }
+    *handler = request_handler;
+
+    next_header_filter = ngx_http_top_header_filter;
+    ngx_http_top_header_filter = header_filter;
+
+    next_body_filter = ngx_http_top_body_filter;
+    ngx_http_top_body_filter = body_filter;
+
+    return NGX_OK;
+}
 
 
 static void* create_server_config(ngx_conf_t* conf_ctx)
@@ -107,12 +143,7 @@ static char* merge_server_config(ngx_conf_t* conf_ctx, void* parent, void* child
         return (char*)NGX_CONF_ERROR;
     }
 
-    // Assign request handler
-    ngx_http_core_loc_conf_t* core_loc_conf = (ngx_http_core_loc_conf_t*)
-        ngx_http_conf_get_module_loc_conf(conf_ctx, ngx_http_core_module);
-
-    core_loc_conf->handler = request_handler;
-    return NGX_CONF_OK;
+    return NGX_OK;
 }
 
 
@@ -165,6 +196,25 @@ static ngx_int_t request_handler(ngx_http_request_t* request)
 
     cache->add_entry(cache_key);
     return NGX_DECLINED;
+}
+
+
+static ngx_int_t header_filter(ngx_http_request_t* r)
+{
+    // TODO: get the request ctx; if there is none (not a leader), pass through.
+    // Leader: if content_length_n is -1 (chunked) or too big for the slot,
+    // set the entry to REFUSED. Otherwise store the status and headers
+    // in the payload, after cached_res_t.
+    return next_header_filter(r);
+}
+
+
+static ngx_int_t body_filter(ngx_http_request_t* r, ngx_chain_t* in)
+{
+    // TODO: no ctx -> pass through.
+    // Leader: copy each buffer into the slot, and on last_buf set COMPLETE.
+    // If the body outgrows the slot mid-stream, set REFUSED and keep streaming.
+    return next_body_filter(r, in);
 }
 
 }  // namespace ngx::http::coalesce

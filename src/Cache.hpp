@@ -25,8 +25,7 @@ class Cache {
     struct ring_entry_t {
         enum class status_t { FREE, WAITING, COMPLETE, REFUSED, ERROR };
 
-        void* payload_headers;
-        void* payload_body;
+        void* payload;
         uint32_t subscribers;
         uint32_t payload_size;
         uint32_t tag;
@@ -51,6 +50,7 @@ class Cache {
 
     uint32_t rings_count() { return rings_count_; }
     uint32_t rings_size() { return rings_size_; }
+    uint32_t slot_size() { return slot_size_; }
     size_t total_cache_size();
     size_t total_pool_size();
 

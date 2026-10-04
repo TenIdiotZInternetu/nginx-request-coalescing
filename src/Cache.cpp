@@ -102,8 +102,7 @@ ngx_int_t Cache::init_rings(Cache* cache)
 
         ring_entry_t* entries = (ring_entry_t*)(ring + 1);
         for (uint32_t j = 0; j < cache->rings_size(); ++j) {
-            entries[j].payload_headers = slot_addr;
-            entries[j].payload_body = slot_addr;
+            entries[j].payload = slot_addr;
             slot_addr += cache->slot_size_;
         }
     }
@@ -119,7 +118,7 @@ void Cache::set_entry_payload(ngx_str_t key, void* data, uint32_t data_size)
 
     ngx_shmtx_lock(&ring->mutex);
     ring_entry_t* entry = get_ring_entry(ring, hash.tag);
-    entry->payload = data;
+    ngx_memcpy(entry->payload, data, data_size);
     entry->payload_size = data_size;
     ngx_shmtx_unlock(&ring->mutex);
 }
