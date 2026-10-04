@@ -17,8 +17,8 @@ typedef struct {
     size_t max_entry_payload_size;
     ngx_shm_zone_t* cache_shm;
 } server_config_t;
+
 static server_config_t default_config{16, 1024, 16384, NULL};
-static server_config_t default_config{16, 4096};
 
 static ngx_int_t request_handler(ngx_http_request_t* r);
 static void* create_server_config(ngx_conf_t* cf);
@@ -92,7 +92,20 @@ static char* merge_server_config(ngx_conf_t* conf_ctx, void* parent, void* child
         parent_conf->ring_buffer_count,
         default_config.ring_buffer_count);
 
-    // TODO: init shared memory
+    ngx_conf_merge_size_value(child_conf->max_entry_payload_size,
+        parent_conf->max_entry_payload_size,
+        default_config.max_entry_payload_size);
+
+    // Shared memory
+    child_conf->cache_shm = Cache::init(conf_ctx,
+        child_conf->ring_buffer_count,
+        child_conf->ring_buffer_size,
+        child_conf->max_entry_payload_size,
+        &ngx_request_coalescing_module);
+
+    if (child_conf->cache_shm == NULL) {
+        return (char*)NGX_CONF_ERROR;
+    }
 
     // Assign request handler
     ngx_http_core_loc_conf_t* core_loc_conf = (ngx_http_core_loc_conf_t*)
@@ -134,7 +147,7 @@ static ngx_int_t request_handler(ngx_http_request_t* request)
     server_config_t* srv_config = (server_config_t*)ngx_http_get_module_srv_conf(
         request, ngx_request_coalescing_module);
 
-    Cache* cache = srv_config->cache;
+    Cache* cache = (Cache*)srv_config->cache_shm->data;
     ngx_str_t cache_key;
 
     if (get_cache_key(request, &cache_key) != NGX_OK) {

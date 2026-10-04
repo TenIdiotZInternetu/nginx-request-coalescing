@@ -3,7 +3,6 @@
 
 #include <cstdint>
 
-
 extern "C" {
 #include <ngx_conf_file.h>
 #include <ngx_config.h>
@@ -59,8 +58,10 @@ class Cache {
     }
 
    private:
-    ngx_str_t shm_zone_name_;
-    void* data_;
+    static uint32_t s_zone_id_;
+
+    char shm_zone_name_[48];
+    void* addr_;
     uint32_t rings_count_;
     uint32_t rings_size_;
     uint32_t slot_size_;
