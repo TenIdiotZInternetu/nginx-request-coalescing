@@ -4,7 +4,9 @@
 
 #include <cstdint>
 
+
 extern "C" {
+#include "ngx_alloc.h"
 #include "ngx_config.h"
 #include "ngx_core.h"
 #include "ngx_cycle.h"
@@ -40,7 +42,7 @@ ngx_shm_zone_t* Cache::init(ngx_conf_t* config_ctx, uint32_t rings_count, uint32
 
     cache->rings_count_ = align_to_nearest_exp(rings_count);
     cache->rings_size_ = rings_size;
-    cache->slot_size_ = slot_size;
+    cache->slot_size_ = ngx_align(slot_size, NGX_ALIGNMENT);
 
     uint32_t name_len = sprintf(cache->shm_zone_name_, "%s_%u", SHM_ZONE_NAME, s_zone_id_);
     ngx_str_t zone_name = {(size_t)name_len, (u_char*)cache->shm_zone_name_};
@@ -69,23 +71,43 @@ ngx_int_t Cache::init_shm_zone(ngx_shm_zone_t* zone, void* old_data)
     Cache* cache = (Cache*)zone->data;
     ngx_slab_pool_t* pool = (ngx_slab_pool_t*)zone->shm.addr;
 
-    void* mem = ngx_slab_calloc(pool, cache->total_cache_size());
+    void* mem = ngx_slab_calloc(pool, cache->total_pool_size());
     if (mem == NULL) {
         return NGX_ERROR;
     }
 
     cache->addr_ = mem;
-
-    for (uint32_t i = 0; i < cache->rings_count(); ++i) {
-        ring_head_t* ring = cache->get_ring_head(i);
-        ngx_int_t res = ngx_shmtx_create(&ring->mutex, &ring->mutex_sh, zone->shm.name.data);
-        if (res != NGX_OK) {
-            return NGX_ERROR;
-        }
+    if (init_rings(cache) != NGX_OK) {
+        return NGX_ERROR;
     }
 
     ngx_memcpy(mem, cache, sizeof(Cache));
     zone->data = mem;
+    return NGX_OK;
+}
+
+
+ngx_int_t Cache::init_rings(Cache* cache)
+{
+    u_char* slot_addr = cache->slots_begin();
+
+    for (uint32_t i = 0; i < cache->rings_count(); ++i) {
+        ring_head_t* ring = cache->get_ring_head(i);
+        ngx_int_t res = ngx_shmtx_create(
+            &ring->mutex, &ring->mutex_sh, (u_char*)cache->shm_zone_name_);
+
+        if (res != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        ring_entry_t* entries = (ring_entry_t*)(ring + 1);
+        for (uint32_t j = 0; j < cache->rings_size(); ++j) {
+            entries[j].payload_headers = slot_addr;
+            entries[j].payload_body = slot_addr;
+            slot_addr += cache->slot_size_;
+        }
+    }
+
     return NGX_OK;
 }
 
@@ -114,6 +136,25 @@ void Cache::cpy_entry_payload(ngx_str_t key, void* destination)
     ngx_shmtx_unlock(&ring->mutex);
 }
 
+
+size_t Cache::total_cache_size()
+{
+    size_t data = total_pool_size();
+    size_t pages = data / ngx_pagesize;
+    size_t overhead_leeway = 4 * ngx_pagesize;
+
+    size_t slab_overhead = pages * sizeof(ngx_slab_page_t) + overhead_leeway;
+    return data + slab_overhead;
+}
+
+
+size_t Cache::total_pool_size()
+{
+    size_t entry_size = sizeof(ring_entry_t) + slot_size_;
+    return sizeof(Cache) + rings_count_ * (sizeof(ring_head_t) + rings_size_ * entry_size);
+}
+
+
 uint32_t Cache::align_to_nearest_exp(uint32_t num)
 {
     uint32_t exp = 1;
@@ -127,7 +168,7 @@ uint32_t Cache::align_to_nearest_exp(uint32_t num)
 Cache::ring_head_t* Cache::get_ring_head(uint32_t ring_idx)
 {
     u_char* addr = (u_char*)((Cache*)addr_ + 1);
-    addr += ring_idx * sizeof(ring_head_t) + rings_size_ * sizeof(ring_entry_t);
+    addr += ring_idx * (sizeof(ring_head_t) + rings_size_ * sizeof(ring_entry_t));
     return (ring_head_t*)addr;
 }
 
@@ -147,4 +188,9 @@ Cache::ring_entry_t* Cache::get_ring_entry(ring_head_t* ring, uint32_t tag)
 }
 
 
+u_char* Cache::slots_begin()
+{
+    u_char* rings_end = (u_char*)get_ring_head(rings_count_);
+    return ngx_align_ptr(rings_end, NGX_ALIGNMENT);
+}
 }  // namespace ngx::http::coalesce

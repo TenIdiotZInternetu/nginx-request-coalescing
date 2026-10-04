@@ -51,11 +51,8 @@ class Cache {
 
     uint32_t rings_count() { return rings_count_; }
     uint32_t rings_size() { return rings_size_; }
-    uint32_t total_cache_size()  // TODO: align
-    {
-        return rings_count_ * (rings_size_ * sizeof(ring_entry_t) + sizeof(ring_head_t))
-             + sizeof(Cache);
-    }
+    size_t total_cache_size();
+    size_t total_pool_size();
 
    private:
     static uint32_t s_zone_id_;
@@ -68,10 +65,13 @@ class Cache {
 
     hash_t hash_key(ngx_str_t key);
     static ngx_int_t init_shm_zone(ngx_shm_zone_t* zone, void* cache_data);
+    static ngx_int_t init_rings(Cache* cache);
 
     ring_head_t* get_ring_head(uint32_t ring_idx);
     ring_entry_t* get_ring_entry(ring_head_t* ring, uint32_t tag);
     static uint32_t align_to_nearest_exp(uint32_t num);
+
+    u_char* slots_begin();
 };
 
 }  // namespace ngx::http::coalesce
